@@ -11,7 +11,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     // Abre o arquivo
-    let rom_file = match File::open(&args[1]) {
+    let mut rom_file = match File::open(&args[1]) {
         Ok(file) => file,
         Err(err) => {
             panic!("Deu bosta na leitura do arquivo: {}", err)
@@ -25,13 +25,20 @@ fn main() {
     //    Err(_) => println!("Whay")
     // };
 
+    // Lê todo o arquivo e coloca na memoria (rom)
+    let mut rom = Vec::new();
+    let rom_size = match rom_file.read_to_end(&mut rom) {
+        Ok(size) => size,
+        Err(_) =>  0
+    };
+
     // Lê a entrada como um stream
-    for byte in rom_file.bytes() {
-        println!("{}", match byte {
-            Ok(val) => val,
-            Err(_) => 0
-        });
-    }
+    // for byte in rom_file.bytes() {
+    //     println!("{}", match byte {
+    //         Ok(val) => val,
+    //         Err(_) => 0
+    //     });
+    // }
 
     // Instancia os objetos necessarios para tela
     let mut events_loop = glutin::EventsLoop::new();
