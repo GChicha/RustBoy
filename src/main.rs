@@ -6,6 +6,9 @@ use std::io::prelude::*;
 use glium::glutin;
 use glium::Surface;
 
+mod memory;
+mod cpu;
+
 fn main() {
     // Obtem os argumentos do terminal
     let args: Vec<String> = env::args().collect();
@@ -18,13 +21,6 @@ fn main() {
         }
     };
 
-    // Realiza a leitura do arquivo inteiro
-    // let mut content = String::new();
-    // match rom_file.read_to_string(&mut content) {
-    //    Ok(size) => println!("O tamanho do arquivo é {}", size),
-    //    Err(_) => println!("Whay")
-    // };
-
     // Lê todo o arquivo e coloca na memoria (rom)
     let mut rom = Vec::new();
     let rom_size = match rom_file.read_to_end(&mut rom) {
@@ -32,13 +28,11 @@ fn main() {
         Err(_) =>  0
     };
 
-    // Lê a entrada como um stream
-    // for byte in rom_file.bytes() {
-    //     println!("{}", match byte {
-    //         Ok(val) => val,
-    //         Err(_) => 0
-    //     });
-    // }
+    let mem = memory::Memory::new(rom);
+    let mut cpu = cpu::CPU::new(mem);
+    loop {
+        cpu.step();
+    }
 
     // Instancia os objetos necessarios para tela
     let mut events_loop = glutin::EventsLoop::new();
