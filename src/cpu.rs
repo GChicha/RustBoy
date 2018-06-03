@@ -20,6 +20,12 @@ enum Register {
     E,
     H,
     L,
+    BC,
+    HL,
+}
+
+trait Executable {
+    fn execute();
 }
 
 enum Instructions {
@@ -27,7 +33,14 @@ enum Instructions {
     Nop,
     Jp { nn: u16 },
     Load { r1: Register, r2: Register },
+    LoadImmediate { r1 : Register, immediate : u16 },
     Inc { r1: Register },
+    Dec { r1: Register },
+}
+
+impl Executable for Instructions {
+    fn execute() {
+    }
 }
 
 impl Instructions {
@@ -49,11 +62,76 @@ impl Instructions {
                 r1: Register::C,
                 r2: Register::E,
             },
+            0x4A => Instructions::Load {
+                r1: Register::C,
+                r2: Register::D,
+            },
+            0x48 => Instructions::Load {
+                r1: Register::C,
+                r2: Register::B,
+            },
             0x50 => Instructions::Load {
                 r1: Register::D,
                 r2: Register::B,
             },
+            0x55 => Instructions::Load {
+                r1: Register::D,
+                r2: Register::L,
+            },
+            0x6C => Instructions::Load {
+                r1: Register::L,
+                r2: Register::H,
+            },
+            0x58 => Instructions::Load {
+                r1: Register::E,
+                r2: Register::B,
+            },
+            0x59 => Instructions::Load {
+                r1: Register::E,
+                r2: Register::C,
+            },
+            0x01 => {
+                let immediate = cpu.memory.get_word(cpu.pc).unwrap();
+                cpu.pc = cpu.pc + 2;
+
+                Instructions::LoadImmediate {
+                    r1: Register::BC,
+                    immediate,
+                }
+            },
+            0x56 => {
+                let immediate = cpu.memory.get_word(
+                    cpu.get_register(&Register::HL) as usize).unwrap();
+                cpu.pc = cpu.pc + 2;
+
+                Instructions::LoadImmediate {
+                    r1 : Register::D,
+                    immediate,
+                }
+            },
+            0x66 => {
+                let immediate = cpu.memory.get_word(
+                    cpu.get_register(&Register::HL) as usize).unwrap();
+                cpu.pc = cpu.pc + 2;
+
+                Instructions::LoadImmediate {
+                    r1 : Register::H,
+                    immediate,
+                }
+            },
+            0x6E => {
+                let immediate = cpu.memory.get_word(
+                    cpu.get_register(&Register::HL) as usize).unwrap();
+                cpu.pc = cpu.pc + 2;
+
+                Instructions::LoadImmediate {
+                    r1 : Register::L,
+                    immediate,
+                }
+            },
             0x2C => Instructions::Inc { r1: Register::L },
+            0x03 => Instructions::Inc { r1: Register::BC },
+            0x0D => Instructions::Dec { r1: Register::C },
             _ => Instructions::Undefined,
         }
     }
@@ -69,6 +147,14 @@ impl CPU {
             Register::E => self.e as u16,
             Register::H => self.h as u16,
             Register::L => self.l as u16,
+            Register::BC => {
+                (self.get_register(&Register::B) << 8) |
+                    self.get_register(&Register::C)
+            },
+            Register::HL => {
+                (self.get_register(&Register::H) << 8) |
+                    self.get_register(&Register::L)
+            },
         }
     }
 
@@ -81,19 +167,44 @@ impl CPU {
             Register::E => self.e = value as u8,
             Register::H => self.h = value as u8,
             Register::L => self.l = value as u8,
+            Register::BC => {
+                self.b = (value >> 8) as u8;
+                self.c = value as u8;
+            },
+            Register::HL => {
+                self.h = (value >> 8) as u8;
+                self.l = value as u8;
+            },
         };
     }
 
     pub fn step(&mut self) {
         let opcode = self.memory.get_byte(self.pc).unwrap();
+        println!("On address {:04X} opcode {:02X}", self.pc, opcode);
+        let result : u16;
         match Instructions::decode(opcode, self) {
-            Instructions::Undefined => {
-                panic!("{:02X}: Not identified on Address {:02X}", opcode, self.pc)
-            }
-            Instructions::Nop => self.pc = self.pc + 1,
-            Instructions::Jp { nn } => self.pc = nn as usize,
-            Instructions::Load { r1, r2 } => self.set_register(&r1, self.get_register(&r2)),
-            Instructions::Inc { r1 } => self.set_register(&r1, self.get_register(&r1) + 1),
+            Instructions::Undefined => panic!(
+                "{:02X}: Not identified on Address {:04X}", opcode, self.pc),
+            Instructions::Nop => {},
+            Instructions::Jp { nn } => {
+                println!("Next pc = {:04X}", nn);
+                self.pc = nn as usize;
+            },
+            Instructions::Load { r1, r2 } => {
+                result = self.get_register(&r2);
+                self.set_register(&r1, result);
+            },
+            Instructions::Inc { r1 } => {
+                result = self.get_register(&r1) + 1;
+                self.set_register(&r1, result);
+            },
+            Instructions::LoadImmediate { r1, immediate } => {
+                self.set_register(&r1, immediate);
+            },
+            Instructions::Dec { r1 } => {
+                result = self.get_register(&r1) - 1;
+                self.set_register(&r1, result);
+            },
         };
     }
 

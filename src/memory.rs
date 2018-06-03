@@ -40,7 +40,7 @@ impl Memory {
         match translate_address.section {
             Section::Rom => {
                 let data = self.rom[translate_address.address] as u16;
-                let data = (data << 8) | self.rom[translate_address.address] as u16;
+                let data = (data << 8) | self.rom[translate_address.address + 1] as u16;
 
                 Ok(data)
             },
