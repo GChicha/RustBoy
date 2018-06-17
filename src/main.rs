@@ -1,13 +1,13 @@
 extern crate glium;
 
+use glium::glutin;
+use glium::Surface;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
-use glium::glutin;
-use glium::Surface;
 
-mod memory;
 mod cpu;
+mod memory;
 
 fn main() {
     // Obtem os argumentos do terminal
@@ -16,16 +16,14 @@ fn main() {
     // Abre o arquivo
     let mut rom_file = match File::open(&args[1]) {
         Ok(file) => file,
-        Err(err) => {
-            panic!("Deu bosta na leitura do arquivo: {}", err)
-        }
+        Err(err) => panic!("Deu bosta na leitura do arquivo: {}", err),
     };
 
     // Lê todo o arquivo e coloca na memoria (rom)
     let mut rom = Vec::new();
     let rom_size = match rom_file.read_to_end(&mut rom) {
         Ok(size) => size,
-        Err(_) =>  0
+        Err(_) => 0,
     };
 
     let mem = memory::Memory::new(rom);
@@ -36,9 +34,9 @@ fn main() {
 
     // Instancia os objetos necessarios para tela
     let mut events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new().
-        with_dimensions(240, 160).
-        with_title("GBA Emulator");
+    let window = glutin::WindowBuilder::new()
+        .with_dimensions(240, 160)
+        .with_title("GBA Emulator");
     let context = glutin::ContextBuilder::new();
     let display = glium::Display::new(window, context, &events_loop).unwrap();
 
@@ -51,14 +49,12 @@ fn main() {
 
     // Loop de execução do programa
     while !closed {
-        events_loop.poll_events(|ev| {
-            match ev {
-                glutin::Event::WindowEvent {event, .. } => match event {
-                    glutin::WindowEvent::Closed => closed = true,
-                    _ => (),
-                },
+        events_loop.poll_events(|ev| match ev {
+            glutin::Event::WindowEvent { event, .. } => match event {
+                glutin::WindowEvent::Closed => closed = true,
                 _ => (),
-            }
+            },
+            _ => (),
         });
     }
 }

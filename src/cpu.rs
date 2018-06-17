@@ -1,15 +1,17 @@
+use std::fmt;
+
 use memory;
 
 pub struct CPU {
     memory: memory::Memory,
-    pc: usize,
-    a: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
+    pc: u16,
+    a: i8,
+    b: i8,
+    c: i8,
+    d: i8,
+    e: i8,
+    h: i8,
+    l: i8,
 }
 
 enum Register {
@@ -22,190 +24,416 @@ enum Register {
     L,
     BC,
     HL,
+    DE,
 }
 
-trait Executable {
-    fn execute();
-}
+impl Register {
+    fn read(&self, cpu: &CPU) -> i16 {
+        match self {
+            Register::A => cpu.a as i16,
+            Register::B => cpu.b as i16,
+            Register::C => cpu.c as i16,
+            Register::D => cpu.d as i16,
+            Register::E => cpu.e as i16,
+            Register::H => cpu.h as i16,
+            Register::L => cpu.l as i16,
+            Register::BC => ((cpu.b as u16) << 8 | cpu.c as u16) as i16,
+            Register::HL => ((cpu.h as u16) << 8 | cpu.l as u16) as i16,
+            Register::DE => ((cpu.d as u16) << 8 | cpu.e as u16) as i16,
+        }
+    }
 
-enum Instructions {
-    Undefined,
-    Nop,
-    Jp { nn: u16 },
-    Load { r1: Register, r2: Register },
-    LoadImmediate { r1 : Register, immediate : u16 },
-    Inc { r1: Register },
-    Dec { r1: Register },
-}
-
-impl Executable for Instructions {
-    fn execute() {
+    fn write(&self, cpu: &mut CPU, value: i16) {
+        match self {
+            Register::A => cpu.a = value as i8,
+            Register::B => cpu.b = value as i8,
+            Register::C => cpu.c = value as i8,
+            Register::D => cpu.d = value as i8,
+            Register::E => cpu.e = value as i8,
+            Register::H => cpu.h = value as i8,
+            Register::L => cpu.l = value as i8,
+            Register::BC => {
+                cpu.b = (value >> 8) as i8;
+                cpu.c = value as i8;
+            }
+            Register::HL => {
+                cpu.h = (value >> 8) as i8;
+                cpu.l = value as i8;
+            }
+            Register::DE => {
+                cpu.d = (value >> 8) as i8;
+                cpu.e = value as i8;
+            }
+        };
     }
 }
 
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result = match self {
+            Register::A => "A",
+            Register::B => "B",
+            Register::C => "C",
+            Register::D => "D",
+            Register::E => "E",
+            Register::H => "H",
+            Register::L => "L",
+            Register::BC => "BC",
+            Register::HL => "HL",
+            Register::DE => "DE",
+        };
+
+        write!(f, "{}", result)
+    }
+}
+
+enum Operand {
+    AddressU8(u16),
+    AddressU16(u16),
+    Register(Register),
+    RegisterAddressU8(Register), // Decay to AddressU8
+    RegisterAddressU16(Register), // Decay to AddressU16
+}
+
+impl Operand {
+    fn get(&self, cpu: &CPU) -> i16 {
+        match self {
+            Operand::AddressU8(address) => {
+                cpu.memory.get_byte(*address).unwrap() as i16
+            }
+            Operand::AddressU16(address) => {
+                cpu.memory.get_word(*address).unwrap()
+            }
+            Operand::Register(register) => register.read(cpu),
+            Operand::RegisterAddressU8(register) => {
+                let result = register.read(cpu);
+                Operand::AddressU8(result as u16).get(cpu)
+            }
+            Operand::RegisterAddressU16(register) => {
+                let result = register.read(cpu);
+                Operand::AddressU16(result as u16).get(cpu)
+            }
+        }
+    }
+
+    fn set(&self, cpu: &mut CPU, value: i16) {
+        match self {
+            Operand::AddressU8(address) => {
+                cpu.memory.set_byte(*address, value as i8);
+            }
+            Operand::AddressU16(address) => {
+                cpu.memory.set_word(*address, value);
+            }
+            Operand::Register(register) => {
+                register.write(cpu, value);
+            }
+            Operand::RegisterAddressU8(register) => {
+                let address = register.read(cpu);
+                Operand::AddressU8(address as u16).set(cpu, value);
+            }
+            Operand::RegisterAddressU16(register) => {
+                let address = register.read(cpu);
+                Operand::AddressU16(address as u16).set(cpu, value);
+            }
+        };
+    }
+}
+
+impl fmt::Display for Operand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Operand::AddressU8(address) => write!(f, "({:04X})", address),
+            Operand::AddressU16(address) => write!(f, "({:04X})", address),
+            Operand::Register(register) => register.fmt(f),
+            Operand::RegisterAddressU8(register) => write!(f, "({})", register),
+            Operand::RegisterAddressU16(register) => {
+                write!(f, "({})", register)
+            }
+        }
+    }
+}
+
+enum Instructions {
+    Undefined { opcode: u8 },
+    Nop,
+    Add { op1: Operand, op2: Operand },
+    Xor { op1: Operand, op2: Operand },
+    Load { op1: Operand, op2: Operand },
+    Jp { op: Operand },
+    Inc { op: Operand },
+    Dec { op: Operand },
+    Sla { op: Operand },
+    Stacked { stack: Vec<Instructions> },
+    Cpl,
+}
+
 impl Instructions {
-    fn decode(opcode: u8, cpu: &mut CPU) -> Instructions {
-        cpu.pc += 1;
+    fn execute(&self, cpu: &mut CPU) {
+        let result: i16;
+        match self {
+            Instructions::Undefined { opcode } => panic!(
+                "{:02X}: Not identified on Address 0x{:04X}",
+                opcode, cpu.pc
+            ),
+            Instructions::Nop => {}
+            Instructions::Add { op1, op2 } => {
+                result = op2.get(cpu);
+                let op1_value = op1.get(cpu) + result;
+                op1.set(cpu, op1_value);
+            }
+            Instructions::Xor { op1, op2 } => {
+                let op1_value = op1.get(cpu);
+                let result = op1_value ^ op2.get(cpu);
+                op1.set(cpu, result);
+            }
+            Instructions::Jp { op } => {
+                cpu.pc = op.get(cpu) as u16;
+            }
+            Instructions::Load { op1, op2 } => {
+                result = op2.get(cpu);
+                op1.set(cpu, result);
+            }
+            Instructions::Inc { op } => {
+                result = op.get(cpu) + 1;
+                op.set(cpu, result);
+            }
+            Instructions::Dec { op } => {
+                result = op.get(cpu) - 1;
+                op.set(cpu, result);
+            }
+            Instructions::Sla { op } => {
+                result = op.get(cpu) << 1;
+                op.set(cpu, result);
+            }
+            Instructions::Stacked { stack } => {
+                for instr in stack.iter() {
+                    instr.execute(cpu);
+                }
+            }
+            Instructions::Cpl => {
+                result = !Operand::Register(Register::A).get(cpu);
+                Operand::Register(Register::A).set(cpu, result);
+            }
+        };
+    }
+
+    fn decode(opcode: u8, pc: &mut u16) -> Instructions {
         match opcode {
             0x00 => Instructions::Nop,
-            0xC3 => {
-                let op = cpu.memory.get_word(cpu.pc).unwrap();
-                cpu.pc = cpu.pc + 2;
+            0x01 => {
+                let address = *pc + 1;
+                *pc += 2;
 
-                Instructions::Jp { nn: op }
+                Instructions::Load {
+                    op1: Operand::Register(Register::BC),
+                    op2: Operand::AddressU16(address),
+                }
             }
+            0x03 => Instructions::Inc {
+                op: Operand::Register(Register::BC),
+            },
+            0x06 => {
+                let address = *pc + 1;
+                *pc += 1;
+
+                Instructions::Load {
+                    op1: Operand::Register(Register::B),
+                    op2: Operand::AddressU8(address),
+                }
+            }
+            0x0B => Instructions::Dec {
+                op: Operand::Register(Register::BC),
+            },
+            0x0D => Instructions::Dec {
+                op: Operand::Register(Register::C),
+            },
+            0x0E => {
+                let address = *pc + 1;
+                *pc += 1;
+
+                Instructions::Load {
+                    op1: Operand::Register(Register::C),
+                    op2: Operand::AddressU8(address),
+                }
+            }
+            0x11 => {
+                let address = *pc + 1;
+                *pc += 2;
+
+                Instructions::Load {
+                    op1: Operand::Register(Register::DE),
+                    op2: Operand::AddressU16(address),
+                }
+            }
+            0x15 => Instructions::Dec {
+                op: Operand::Register(Register::D),
+            },
+            0x19 => Instructions::Add {
+                op1: Operand::Register(Register::HL),
+                op2: Operand::Register(Register::DE),
+            },
+            0x1D => Instructions::Dec {
+                op: Operand::Register(Register::E),
+            },
+            0x21 => {
+                let address = *pc + 1;
+                *pc += 2;
+
+                Instructions::Load {
+                    op1: Operand::Register(Register::HL),
+                    op2: Operand::AddressU16(address),
+                }
+            }
+            0x22 => Instructions::Sla {
+                op: Operand::Register(Register::D),
+            },
+            0x25 => Instructions::Dec {
+                op: Operand::Register(Register::H),
+            },
+            0x29 => Instructions::Add {
+                op1: Operand::Register(Register::HL),
+                op2: Operand::Register(Register::HL),
+            },
+            0x32 => {
+                let mut stacked_instructions = Vec::new();
+
+                stacked_instructions.push(Instructions::Load {
+                    op1: Operand::RegisterAddressU8(Register::HL),
+                    op2: Operand::Register(Register::A),
+                });
+
+                stacked_instructions.push(Instructions::Dec {
+                    op: Operand::Register(Register::HL),
+                });
+
+                Instructions::Stacked {
+                    stack: stacked_instructions,
+                }
+            }
+            0x51 => Instructions::Load {
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::C),
+            },
+            0x52 => Instructions::Load {
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::D),
+            },
+            0x53 => Instructions::Load {
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::E),
+            },
             0x54 => Instructions::Load {
-                r1: Register::D,
-                r2: Register::H,
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::H),
+            },
+            0x57 => Instructions::Load {
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::A),
             },
             0x4B => Instructions::Load {
-                r1: Register::C,
-                r2: Register::E,
+                op1: Operand::Register(Register::C),
+                op2: Operand::Register(Register::E),
             },
             0x4A => Instructions::Load {
-                r1: Register::C,
-                r2: Register::D,
+                op1: Operand::Register(Register::C),
+                op2: Operand::Register(Register::D),
             },
             0x48 => Instructions::Load {
-                r1: Register::C,
-                r2: Register::B,
+                op1: Operand::Register(Register::C),
+                op2: Operand::Register(Register::B),
+            },
+            0x49 => Instructions::Load {
+                op1: Operand::Register(Register::C),
+                op2: Operand::Register(Register::C),
             },
             0x50 => Instructions::Load {
-                r1: Register::D,
-                r2: Register::B,
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::B),
             },
             0x55 => Instructions::Load {
-                r1: Register::D,
-                r2: Register::L,
+                op1: Operand::Register(Register::D),
+                op2: Operand::Register(Register::L),
             },
             0x6C => Instructions::Load {
-                r1: Register::L,
-                r2: Register::H,
+                op1: Operand::Register(Register::L),
+                op2: Operand::Register(Register::H),
             },
             0x58 => Instructions::Load {
-                r1: Register::E,
-                r2: Register::B,
+                op1: Operand::Register(Register::E),
+                op2: Operand::Register(Register::B),
             },
             0x59 => Instructions::Load {
-                r1: Register::E,
-                r2: Register::C,
+                op1: Operand::Register(Register::E),
+                op2: Operand::Register(Register::C),
             },
-            0x01 => {
-                let immediate = cpu.memory.get_word(cpu.pc).unwrap();
-                cpu.pc = cpu.pc + 2;
+            0x56 => Instructions::Load {
+                op1: Operand::Register(Register::D),
+                op2: Operand::RegisterAddressU8(Register::HL),
+            },
+            0x66 => Instructions::Load {
+                op1: Operand::Register(Register::H),
+                op2: Operand::RegisterAddressU8(Register::HL),
+            },
+            0x6E => Instructions::Load {
+                op1: Operand::Register(Register::L),
+                op2: Operand::RegisterAddressU8(Register::HL),
+            },
+            0x2C => Instructions::Inc {
+                op: Operand::Register(Register::L),
+            },
+            0x2F => Instructions::Cpl,
+            0xAF => Instructions::Xor {
+                op1: Operand::Register(Register::A),
+                op2: Operand::Register(Register::A),
+            },
+            0xC3 => {
+                let op = *pc + 1;
+                *pc += 2;
 
-                Instructions::LoadImmediate {
-                    r1: Register::BC,
-                    immediate,
+                Instructions::Jp {
+                    op: Operand::AddressU16(op),
                 }
-            },
-            0x56 => {
-                let immediate = cpu.memory.get_word(
-                    cpu.get_register(&Register::HL) as usize).unwrap();
-                cpu.pc = cpu.pc + 2;
+            }
+            _ => Instructions::Undefined { opcode },
+        }
+    }
+}
 
-                Instructions::LoadImmediate {
-                    r1 : Register::D,
-                    immediate,
+impl fmt::Display for Instructions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Instructions::Undefined { opcode } => {
+                write!(f, "Undefined {:04X}", opcode)
+            }
+            Instructions::Nop => write!(f, "Nop"),
+            Instructions::Add { op1, op2 } => write!(f, "Add {}, {}", op1, op2),
+            Instructions::Xor { op1, op2 } => write!(f, "Xor {}, {}", op1, op2),
+            Instructions::Jp { op } => write!(f, "Jp {}", op),
+            Instructions::Load { op1, op2 } => {
+                write!(f, "Load {}, {}", op1, op2)
+            }
+            Instructions::Inc { op } => write!(f, "Inc {}", op),
+            Instructions::Dec { op } => write!(f, "Dec {}", op),
+            Instructions::Sla { op } => write!(f, "Sla {}", op),
+            Instructions::Stacked { stack } => {
+                for instr in stack.iter() {
+                    let _ = write!(f, "{} -- ", instr);
                 }
-            },
-            0x66 => {
-                let immediate = cpu.memory.get_word(
-                    cpu.get_register(&Register::HL) as usize).unwrap();
-                cpu.pc = cpu.pc + 2;
 
-                Instructions::LoadImmediate {
-                    r1 : Register::H,
-                    immediate,
-                }
-            },
-            0x6E => {
-                let immediate = cpu.memory.get_word(
-                    cpu.get_register(&Register::HL) as usize).unwrap();
-                cpu.pc = cpu.pc + 2;
-
-                Instructions::LoadImmediate {
-                    r1 : Register::L,
-                    immediate,
-                }
-            },
-            0x2C => Instructions::Inc { r1: Register::L },
-            0x03 => Instructions::Inc { r1: Register::BC },
-            0x0D => Instructions::Dec { r1: Register::C },
-            _ => Instructions::Undefined,
+                write!(f, "")
+            }
+            Instructions::Cpl => write!(f, "Cpl"),
         }
     }
 }
 
 impl CPU {
-    fn get_register(&self, register: &Register) -> u16 {
-        match register {
-            Register::A => self.a as u16,
-            Register::B => self.b as u16,
-            Register::C => self.c as u16,
-            Register::D => self.d as u16,
-            Register::E => self.e as u16,
-            Register::H => self.h as u16,
-            Register::L => self.l as u16,
-            Register::BC => {
-                (self.get_register(&Register::B) << 8) |
-                    self.get_register(&Register::C)
-            },
-            Register::HL => {
-                (self.get_register(&Register::H) << 8) |
-                    self.get_register(&Register::L)
-            },
-        }
-    }
-
-    fn set_register(&mut self, register: &Register, value: u16) {
-        match register {
-            Register::A => self.a = value as u8,
-            Register::B => self.b = value as u8,
-            Register::C => self.c = value as u8,
-            Register::D => self.d = value as u8,
-            Register::E => self.e = value as u8,
-            Register::H => self.h = value as u8,
-            Register::L => self.l = value as u8,
-            Register::BC => {
-                self.b = (value >> 8) as u8;
-                self.c = value as u8;
-            },
-            Register::HL => {
-                self.h = (value >> 8) as u8;
-                self.l = value as u8;
-            },
-        };
-    }
-
     pub fn step(&mut self) {
         let opcode = self.memory.get_byte(self.pc).unwrap();
-        println!("On address {:04X} opcode {:02X}", self.pc, opcode);
-        let result : u16;
-        match Instructions::decode(opcode, self) {
-            Instructions::Undefined => panic!(
-                "{:02X}: Not identified on Address {:04X}", opcode, self.pc),
-            Instructions::Nop => {},
-            Instructions::Jp { nn } => {
-                println!("Next pc = {:04X}", nn);
-                self.pc = nn as usize;
-            },
-            Instructions::Load { r1, r2 } => {
-                result = self.get_register(&r2);
-                self.set_register(&r1, result);
-            },
-            Instructions::Inc { r1 } => {
-                result = self.get_register(&r1) + 1;
-                self.set_register(&r1, result);
-            },
-            Instructions::LoadImmediate { r1, immediate } => {
-                self.set_register(&r1, immediate);
-            },
-            Instructions::Dec { r1 } => {
-                result = self.get_register(&r1) - 1;
-                self.set_register(&r1, result);
-            },
-        };
+        let instruction = Instructions::decode(opcode as u8, &mut self.pc);
+        println!("0x{:04X}: {}", self.pc, instruction);
+        self.pc += 1;
+        instruction.execute(self);
     }
 
     pub fn new(memory: memory::Memory) -> CPU {
