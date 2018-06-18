@@ -217,28 +217,27 @@ impl Instructions {
         };
     }
 
-    fn decode(opcode: u8, pc: &mut u16) -> Instructions {
-        match opcode {
+    fn decode(opcode: u8, pc: &u16) -> (Instructions, u8) {
+        let mut result = 1;
+        let instr = match opcode {
             0x00 => Instructions::Nop,
             0x01 => {
-                let address = *pc + 1;
-                *pc += 2;
+                result += 2;
 
                 Instructions::Load {
                     op1: Operand::Register(Register::BC),
-                    op2: Operand::AddressU16(address),
+                    op2: Operand::AddressU16(pc + 1),
                 }
             }
             0x03 => Instructions::Inc {
                 op: Operand::Register(Register::BC),
             },
             0x06 => {
-                let address = *pc + 1;
-                *pc += 1;
+                result += 1;
 
                 Instructions::Load {
                     op1: Operand::Register(Register::B),
-                    op2: Operand::AddressU8(address),
+                    op2: Operand::AddressU8(pc + 1),
                 }
             }
             0x0B => Instructions::Dec {
@@ -248,21 +247,19 @@ impl Instructions {
                 op: Operand::Register(Register::C),
             },
             0x0E => {
-                let address = *pc + 1;
-                *pc += 1;
+                result += 1;
 
                 Instructions::Load {
                     op1: Operand::Register(Register::C),
-                    op2: Operand::AddressU8(address),
+                    op2: Operand::AddressU8(pc + 1),
                 }
             }
             0x11 => {
-                let address = *pc + 1;
-                *pc += 2;
+                result += 2;
 
                 Instructions::Load {
                     op1: Operand::Register(Register::DE),
-                    op2: Operand::AddressU16(address),
+                    op2: Operand::AddressU16(pc + 1),
                 }
             }
             0x15 => Instructions::Dec {
@@ -276,12 +273,11 @@ impl Instructions {
                 op: Operand::Register(Register::E),
             },
             0x21 => {
-                let address = *pc + 1;
-                *pc += 2;
+                result += 2;
 
                 Instructions::Load {
                     op1: Operand::Register(Register::HL),
-                    op2: Operand::AddressU16(address),
+                    op2: Operand::AddressU16(pc + 1),
                 }
             }
             0x22 => Instructions::Sla {
@@ -387,15 +383,15 @@ impl Instructions {
                 op2: Operand::Register(Register::A),
             },
             0xC3 => {
-                let op = *pc + 1;
-                *pc += 2;
+                result += 2;
 
                 Instructions::Jp {
-                    op: Operand::AddressU16(op),
+                    op: Operand::AddressU16(pc + 1),
                 }
             }
             _ => Instructions::Undefined { opcode },
-        }
+        };
+        (instr, result)
     }
 }
 
@@ -430,9 +426,10 @@ impl fmt::Display for Instructions {
 impl CPU {
     pub fn step(&mut self) {
         let opcode = self.memory.get_byte(self.pc).unwrap();
-        let instruction = Instructions::decode(opcode as u8, &mut self.pc);
-        println!("0x{:04X}: {}", self.pc, instruction);
-        self.pc += 1;
+        let (instruction, size) =
+            Instructions::decode(opcode as u8, &mut self.pc);
+        println!("0x{:04X} -- {}: {}", self.pc, size, instruction);
+        self.pc += size as u16;
         instruction.execute(self);
     }
 
