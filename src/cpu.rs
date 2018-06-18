@@ -37,9 +37,9 @@ impl Register {
             Register::E => cpu.e as i16,
             Register::H => cpu.h as i16,
             Register::L => cpu.l as i16,
-            Register::BC => ((cpu.b as u16) << 8 | cpu.c as u16) as i16,
-            Register::HL => ((cpu.h as u16) << 8 | cpu.l as u16) as i16,
-            Register::DE => ((cpu.d as u16) << 8 | cpu.e as u16) as i16,
+            Register::BC => ((cpu.b as u16) << 8 | (cpu.c as u8) as u16) as i16,
+            Register::HL => ((cpu.h as u16) << 8 | (cpu.l as u8) as u16) as i16,
+            Register::DE => ((cpu.d as u16) << 8 | (cpu.e as u8) as u16) as i16,
         }
     }
 
@@ -91,15 +91,19 @@ enum Operand {
     AddressU8(u16),
     AddressU16(u16),
     Register(Register),
-    RegisterAddressU8(Register),  // Decay to AddressU8
+    RegisterAddressU8(Register), // Decay to AddressU8
     RegisterAddressU16(Register), // Decay to AddressU16
 }
 
 impl Operand {
     fn get(&self, cpu: &CPU) -> i16 {
         match self {
-            Operand::AddressU8(address) => cpu.memory.get_byte(*address).unwrap() as i16,
-            Operand::AddressU16(address) => cpu.memory.get_word(*address).unwrap(),
+            Operand::AddressU8(address) => {
+                cpu.memory.get_byte(*address).unwrap() as i16
+            }
+            Operand::AddressU16(address) => {
+                cpu.memory.get_word(*address).unwrap()
+            }
             Operand::Register(register) => register.read(cpu),
             Operand::RegisterAddressU8(register) => {
                 let result = register.read(cpu);
@@ -124,8 +128,8 @@ impl Operand {
                 register.write(cpu, value);
             }
             Operand::RegisterAddressU8(register) => {
-                let address = register.read(cpu);
-                Operand::AddressU8(address as u16).set(cpu, value);
+                let address = register.read(cpu) as u16;
+                Operand::AddressU8(address).set(cpu, value);
             }
             Operand::RegisterAddressU16(register) => {
                 let address = register.read(cpu);
@@ -142,7 +146,9 @@ impl fmt::Display for Operand {
             Operand::AddressU16(address) => write!(f, "({:04X})", address),
             Operand::Register(register) => register.fmt(f),
             Operand::RegisterAddressU8(register) => write!(f, "({})", register),
-            Operand::RegisterAddressU16(register) => write!(f, "({})", register),
+            Operand::RegisterAddressU16(register) => {
+                write!(f, "({})", register)
+            }
         }
     }
 }
@@ -165,9 +171,10 @@ impl Instructions {
     fn execute(&self, cpu: &mut CPU) {
         let result: i16;
         match self {
-            Instructions::Undefined { opcode } => {
-                panic!("{:02X}: Not identified on Address 0x{:04X}", opcode, cpu.pc)
-            }
+            Instructions::Undefined { opcode } => panic!(
+                "{:02X}: Not identified on Address 0x{:04X}",
+                opcode, cpu.pc
+            ),
             Instructions::Nop => {}
             Instructions::Add { op1, op2 } => {
                 result = op2.get(cpu);
@@ -224,6 +231,9 @@ impl Instructions {
             }
             0x03 => Instructions::Inc {
                 op: Operand::Register(Register::BC),
+            },
+            0x05 => Instructions::Dec {
+                op: Operand::Register(Register::B),
             },
             0x06 => {
                 result += 1;
@@ -391,12 +401,16 @@ impl Instructions {
 impl fmt::Display for Instructions {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Instructions::Undefined { opcode } => write!(f, "Undefined {:04X}", opcode),
+            Instructions::Undefined { opcode } => {
+                write!(f, "Undefined {:04X}", opcode)
+            }
             Instructions::Nop => write!(f, "Nop"),
             Instructions::Add { op1, op2 } => write!(f, "Add {}, {}", op1, op2),
             Instructions::Xor { op1, op2 } => write!(f, "Xor {}, {}", op1, op2),
             Instructions::Jp { op } => write!(f, "Jp {}", op),
-            Instructions::Load { op1, op2 } => write!(f, "Load {}, {}", op1, op2),
+            Instructions::Load { op1, op2 } => {
+                write!(f, "Load {}, {}", op1, op2)
+            }
             Instructions::Inc { op } => write!(f, "Inc {}", op),
             Instructions::Dec { op } => write!(f, "Dec {}", op),
             Instructions::Sla { op } => write!(f, "Sla {}", op),

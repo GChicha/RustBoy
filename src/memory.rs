@@ -1,9 +1,11 @@
 pub struct Memory {
     rom: Vec<u8>,
+    ram: Vec<u8>,
 }
 
 enum Section {
     Rom,
+    Ram,
 }
 
 struct TranslatedAddress {
@@ -23,6 +25,16 @@ impl Memory {
                 section: Section::Rom,
                 address: address,
             })
+        } else if address < 0xE000 && address > 0xC000 {
+            Ok(TranslatedAddress {
+                section: Section::Ram,
+                address: address - 0xC000,
+            })
+        } else if address < 0xFE00 && address > 0xE000 {
+            Ok(TranslatedAddress {
+                section: Section::Ram,
+                address: address - 0xE000,
+            })
         } else {
             Err("Not mapped yet")
         }
@@ -31,8 +43,12 @@ impl Memory {
     pub fn get_byte(&self, address: u16) -> Result<i8, &'static str> {
         let translate_address = Memory::translate_address(address)?;
         match translate_address.section {
-            Section::Rom => Ok(self.rom[translate_address.address as usize] as i8),
-            _ => Err("Not mapped yet"),
+            Section::Rom => {
+                Ok(self.rom[translate_address.address as usize] as i8)
+            }
+            Section::Ram => {
+                Ok(self.ram[translate_address.address as usize] as i8)
+            }
         }
     }
 
@@ -48,7 +64,12 @@ impl Memory {
     pub fn set_byte(&mut self, address: u16, value: i8) {
         let translate_address = Memory::translate_address(address).unwrap();
         match translate_address.section {
-            Section::Rom => self.rom[translate_address.address as usize] = value as u8,
+            Section::Rom => {
+                self.rom[translate_address.address as usize] = value as u8
+            }
+            Section::Ram => {
+                self.ram[translate_address.address as usize] = value as u8
+            }
         };
     }
 
@@ -56,13 +77,22 @@ impl Memory {
         let translate_address = Memory::translate_address(address).unwrap();
         match translate_address.section {
             Section::Rom => {
-                self.rom[translate_address.address as usize] = (value >> 8) as u8;
+                self.rom[translate_address.address as usize] =
+                    (value >> 8) as u8;
                 self.rom[translate_address.address as usize] = value as u8;
+            }
+            Section::Ram => {
+                self.ram[translate_address.address as usize] =
+                    (value >> 8) as u8;
+                self.ram[translate_address.address as usize] = value as u8;
             }
         };
     }
 
     pub fn new(rom: Vec<u8>) -> Memory {
-        Memory { rom }
+        Memory {
+            rom,
+            ram: vec![0; 0xE000 - 0xC000],
+        }
     }
 }
