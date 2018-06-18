@@ -5,3 +5,4 @@ authors = ["Guilherme Chichanoski <guilherme.chichanoski@gmail.com>"]
 
 [dependencies]
 glium = "*"
+clap = "2.31.2"
