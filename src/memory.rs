@@ -13,7 +13,7 @@ struct TranslatedAddress {
 
 impl Memory {
     fn translate_address(address: u16) -> Result<TranslatedAddress, &'static str> {
-        if address == 0 {
+        if address <= 0 {
             Err("Memory must be higher than zero")
         } else if address < 0x8000 {
             Ok(TranslatedAddress {
