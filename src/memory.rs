@@ -16,7 +16,7 @@ impl Memory {
         address: u16,
     ) -> Result<TranslatedAddress, &'static str> {
         // println!("Requested {:04X}", address);
-        if address == 0 {
+        if address <= 0 {
             Err("Memory must be higher than zero")
         } else if address < 0x8000 {
             Ok(TranslatedAddress {
@@ -31,9 +31,7 @@ impl Memory {
     pub fn get_byte(&self, address: u16) -> Result<i8, &'static str> {
         let translate_address = Memory::translate_address(address)?;
         match translate_address.section {
-            Section::Rom => {
-                Ok(self.rom[translate_address.address as usize] as i8)
-            }
+            Section::Rom => Ok(self.rom[translate_address.address as usize] as i8),
             _ => Err("Not mapped yet"),
         }
     }
@@ -50,9 +48,7 @@ impl Memory {
     pub fn set_byte(&mut self, address: u16, value: i8) {
         let translate_address = Memory::translate_address(address).unwrap();
         match translate_address.section {
-            Section::Rom => {
-                self.rom[translate_address.address as usize] = value as u8
-            }
+            Section::Rom => self.rom[translate_address.address as usize] = value as u8,
         };
     }
 
@@ -60,8 +56,7 @@ impl Memory {
         let translate_address = Memory::translate_address(address).unwrap();
         match translate_address.section {
             Section::Rom => {
-                self.rom[translate_address.address as usize] =
-                    (value >> 8) as u8;
+                self.rom[translate_address.address as usize] = (value >> 8) as u8;
                 self.rom[translate_address.address as usize] = value as u8;
             }
         };

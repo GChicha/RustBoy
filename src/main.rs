@@ -1,8 +1,10 @@
+extern crate clap;
 extern crate glium;
+
+use clap::{App, Arg};
 
 use glium::glutin;
 use glium::Surface;
-use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -10,11 +12,25 @@ mod cpu;
 mod memory;
 
 fn main() {
-    // Obtem os argumentos do terminal
-    let args: Vec<String> = env::args().collect();
+    let matches = App::new("RustBoy")
+        .version("0.1.0")
+        .author("Guilherme Chichanoski <guilherme.chichanoski@gmail.com>")
+        .about("A GameBoy Emulator.")
+        .arg(
+            Arg::with_name("rom")
+                .short("r")
+                .long("rom")
+                .help("ROM file to load")
+                .takes_value(true)
+                .required(true),
+        )
+        .get_matches();
+
+    // It's safe to unwrap here because this argument is required.
+    let rom_path = matches.value_of("rom").unwrap();
 
     // Abre o arquivo
-    let mut rom_file = match File::open(&args[1]) {
+    let mut rom_file = match File::open(rom_path) {
         Ok(file) => file,
         Err(err) => panic!("Deu bosta na leitura do arquivo: {}", err),
     };
