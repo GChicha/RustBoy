@@ -12,6 +12,48 @@ pub struct CPU {
     e: i8,
     h: i8,
     l: i8,
+    fz: bool,
+    fc: bool,
+}
+
+enum Flags {
+    Z,
+    C,
+    Always,
+}
+
+impl Flags {
+    fn get(&self, cpu: &CPU) -> bool {
+        match self {
+            Flags::Z => cpu.fz,
+            Flags::C => cpu.fc,
+            Flags::Always => true,
+        }
+    }
+
+    fn set(&self, cpu: &mut CPU, value: bool) {
+        match self {
+            Flags::Z => {
+                cpu.fz = value;
+            }
+            Flags::C => {
+                cpu.fc = value;
+            }
+            _ => panic!("Unsetable!"),
+        };
+    }
+}
+
+impl fmt::Display for Flags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result = match self {
+            Flags::Z => "Z",
+            Flags::C => "C",
+            _ => "",
+        };
+
+        write!(f, "{}", result)
+    }
 }
 
 enum Register {
@@ -90,6 +132,9 @@ impl fmt::Display for Register {
 enum Operand {
     AddressU8(u16),
     AddressU16(u16),
+    Move(u16), // u16 is the address of number to move by
+    Flag(Flags),
+    NotFlag(Flags),
     Register(Register),
     RegisterAddressU8(Register), // Decay to AddressU8
     RegisterAddressU16(Register), // Decay to AddressU16
@@ -113,6 +158,12 @@ impl Operand {
                 let result = register.read(cpu);
                 Operand::AddressU16(result as u16).get(cpu)
             }
+            Operand::Flag(flag) => flag.get(cpu) as i16,
+            Operand::NotFlag(flag) => !flag.get(cpu) as i16,
+            Operand::Move(address) => {
+                let by = cpu.memory.get_byte(*address).unwrap();
+                ((cpu.pc as i32) + by as i32) as i16
+            }
         }
     }
 
@@ -135,6 +186,9 @@ impl Operand {
                 let address = register.read(cpu);
                 Operand::AddressU16(address as u16).set(cpu, value);
             }
+            Operand::Flag(flag) => flag.set(cpu, value != 0),
+            Operand::NotFlag(flag) => flag.set(cpu, value != 0),
+            Operand::Move(_) => panic!("Can not set move"),
         };
     }
 }
@@ -149,6 +203,9 @@ impl fmt::Display for Operand {
             Operand::RegisterAddressU16(register) => {
                 write!(f, "({})", register)
             }
+            Operand::Flag(flag) => flag.fmt(f),
+            Operand::NotFlag(flag) => write!(f, "!{}", flag),
+            Operand::Move(address) => write!(f, "PC+({:04X})", address),
         }
     }
 }
@@ -159,11 +216,12 @@ enum Instructions {
     Add { op1: Operand, op2: Operand },
     Xor { op1: Operand, op2: Operand },
     Load { op1: Operand, op2: Operand },
-    Jp { op: Operand },
+    Jp { cod: Operand, op: Operand },
     Inc { op: Operand },
     Dec { op: Operand },
     Sla { op: Operand },
     Stacked { stack: Vec<Instructions> },
+    Di,
     Cpl,
 }
 
@@ -186,8 +244,10 @@ impl Instructions {
                 let result = op1_value ^ op2.get(cpu);
                 op1.set(cpu, result);
             }
-            Instructions::Jp { op } => {
-                cpu.pc = op.get(cpu) as u16;
+            Instructions::Jp { cod, op } => {
+                if cod.get(cpu) > 0 {
+                    cpu.pc = op.get(cpu) as u16;
+                }
             }
             Instructions::Load { op1, op2 } => {
                 result = op2.get(cpu);
@@ -200,6 +260,8 @@ impl Instructions {
             Instructions::Dec { op } => {
                 result = op.get(cpu) - 1;
                 op.set(cpu, result);
+
+                cpu.fz = result == 0;
             }
             Instructions::Sla { op } => {
                 result = op.get(cpu) << 1;
@@ -214,6 +276,7 @@ impl Instructions {
                 result = !Operand::Register(Register::A).get(cpu);
                 Operand::Register(Register::A).set(cpu, result);
             }
+            Instructions::Di => {}
         };
     }
 
@@ -272,6 +335,14 @@ impl Instructions {
                 op1: Operand::Register(Register::HL),
                 op2: Operand::Register(Register::DE),
             },
+            0x20 => {
+                result += 1;
+
+                Instructions::Jp {
+                    cod: Operand::NotFlag(Flags::Z),
+                    op: Operand::Move(pc + 1),
+                }
+            }
             0x1D => Instructions::Dec {
                 op: Operand::Register(Register::E),
             },
@@ -307,6 +378,14 @@ impl Instructions {
 
                 Instructions::Stacked {
                     stack: stacked_instructions,
+                }
+            }
+            0x3E => {
+                result += 1;
+
+                Instructions::Load {
+                    op1: Operand::Register(Register::A),
+                    op2: Operand::AddressU8(pc + 1),
                 }
             }
             0x51 => Instructions::Load {
@@ -389,9 +468,11 @@ impl Instructions {
                 result += 2;
 
                 Instructions::Jp {
+                    cod: Operand::Flag(Flags::Always),
                     op: Operand::AddressU16(pc + 1),
                 }
             }
+            0xF3 => Instructions::Di,
             _ => Instructions::Undefined { opcode },
         };
         (instr, result)
@@ -407,7 +488,7 @@ impl fmt::Display for Instructions {
             Instructions::Nop => write!(f, "Nop"),
             Instructions::Add { op1, op2 } => write!(f, "Add {}, {}", op1, op2),
             Instructions::Xor { op1, op2 } => write!(f, "Xor {}, {}", op1, op2),
-            Instructions::Jp { op } => write!(f, "Jp {}", op),
+            Instructions::Jp { cod, op } => write!(f, "Jp {}, {}", cod, op),
             Instructions::Load { op1, op2 } => {
                 write!(f, "Load {}, {}", op1, op2)
             }
@@ -422,6 +503,7 @@ impl fmt::Display for Instructions {
                 write!(f, "")
             }
             Instructions::Cpl => write!(f, "Cpl"),
+            Instructions::Di => write!(f, "Di -- Not functional"),
         }
     }
 }
@@ -447,6 +529,8 @@ impl CPU {
             e: 0xD8,
             h: 0x01,
             l: 0x4D,
+            fz: false,
+            fc: false,
         }
     }
 }
