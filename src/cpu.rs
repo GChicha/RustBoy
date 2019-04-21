@@ -526,7 +526,7 @@ impl CPU {
             b: 0x00,
             c: 0x13,
             d: 0x00,
-            e: 0xD8,
+            e: 0xD8_u8 as i8,
             h: 0x01,
             l: 0x4D,
             fz: false,
